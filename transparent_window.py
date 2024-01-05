@@ -7,10 +7,17 @@
 # root.config(bg="white")
 # root.mainloop()
 
-from PyQt6.QtCore import QEvent, Qt, QTimer
+from PyQt6.QtCore import QEvent, Qt, QTimer, QBuffer
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMainWindow, QDoubleSpinBox, QHBoxLayout, QCheckBox, QListWidget, QListWidgetItem
-from PyQt6.QtGui import QCloseEvent, QPaintEvent, QPainter, QColor, QMouseEvent, QCursor
-from typing import Optional
+from PyQt6.QtGui import QCloseEvent, QPaintEvent, QPainter, QColor, QMouseEvent, QCursor, QScreen
+from screenshot_utils import take_region_screenshot
+from ocr_infer import ocr
+from typing import Optional, Callable
+import win32gui
+import win32ui
+from ctypes import windll
+from PIL import Image, ImageDraw
+from io import BytesIO
 
 
 class CaptureWindow(QMainWindow):
@@ -118,6 +125,7 @@ class LightWidget(QWidget):
 class StatusBarWindow(QMainWindow):
     def __init__(self, capture_window: CaptureWindow):
         super().__init__()
+
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.capture_window = capture_window
         self.capture_window.show()
@@ -196,7 +204,16 @@ class StatusBarWindow(QMainWindow):
         # This is where you'd trigger the screen capture and update the UI
         self.light_indicator.turn_on()
         self.lightTimer.start()  # Start the timer that will turn off the light after the set interval
-        self.addTextItem("Hello World", "pending")
+
+        hwnd = int(self.capture_window.winId())
+
+        # Use win32gui to get the window coordinates
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        region_screenshot = take_region_screenshot(left, top, right, bottom)
+
+        # add changed check later
+        region_text = ocr(region_screenshot)
+        self.addTextItem(region_text, "pending")
 
     def closeEvent(self, _event) -> None:
         self.capture_window.close()
@@ -221,6 +238,7 @@ class StatusBarWindow(QMainWindow):
 if __name__ == "__main__":
     app = QApplication([])
     capture_window = CaptureWindow()
+
     status_bar_window = StatusBarWindow(capture_window)
 
     status_bar_window.show()
