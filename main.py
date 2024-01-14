@@ -1,29 +1,21 @@
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMainWindow, QDoubleSpinBox, QHBoxLayout, QCheckBox, QListWidget, QListWidgetItem, QPushButton
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMainWindow, QHBoxLayout, QCheckBox, QListWidget, QListWidgetItem
 from PyQt6.QtGui import QPainter, QColor, QMouseEvent
 from screenshot_utils import take_region_screenshot
 from queue import Queue
 import win32gui
 import numpy as np
 from typing import Optional, Callable, Any, Tuple
-import httpx
 from result import Result, Ok, Err
-import json
 from functools import partial
 import sounddevice as sd
 import soundfile as sf
 from io import BytesIO
 from threading import Lock
-from collections import deque
-import editdistance
 from pynput import mouse
 from loguru import logger
 from ocr_server import paddle_ocr_infer_fn
-from pyinstrument import Profiler
 import reqwest_wrapper
-
-
-# profiler = Profiler()
 
 
 class CaptureWindow(QMainWindow):
@@ -169,8 +161,6 @@ class MainWindow(QMainWindow):
 
         # please refer to reqwest_wrapper crate for more details...
         self.tts_client = reqwest_wrapper.TTSClient()
-
-        self.tts_recent_text = deque(maxlen=10)
 
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.capture_window = capture_window
@@ -338,26 +328,7 @@ class MainWindow(QMainWindow):
         # Update the UI with the OCR result
         match res:
             case Ok(text):
-                # with self.tts_que_lock:
-                #     agg_text = text
-                #     for que_text, _ in self.tts_queue.queue:
-                #         if agg_text in que_text:
-                #             agg_text = que_text
-                #     to_be_removed = []
-                #     for que_text, item in self.tts_queue.queue:
-                #         if que_text in agg_text:
-                #             to_be_removed.append((que_text, item))
-                #         if editdistance.eval(que_text, agg_text) < 5:
-                #             to_be_removed.append((que_text, item))
-                #     for task in to_be_removed:
-                #         self.tts_queue.queue.remove(task)
-                #         _, item = task
-                #         self.setTextItemColor(item, "discarded")
                 if text:
-                    for recent_text in self.tts_recent_text:
-                        if editdistance.eval(recent_text, text) - abs(len(recent_text) - len(text)) < 5:
-                            return
-                    self.tts_recent_text.append(text)
                     item = self.addTextItem(text, "ttsing")
                     self.tts_queue.put((text, item))
             case Err(error_data):
@@ -365,7 +336,6 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def process_tts(tts_client: reqwest_wrapper.TTSClient, tts_api: str, task: Tuple[str, QListWidgetItem]) -> Tuple[Result[bytes, str], QListWidgetItem]:
-        # profiler.start()
         text, item = task
         print("Processing TTS request..:", text)
         def inner(req_url: str) -> Result[bytes, str]:
@@ -375,7 +345,6 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 return Err(str(e))
         res = inner(tts_api % text)
-        # profiler.stop()
         return res, item
 
     def onTtsFinished(self, res: Tuple[Result[bytes, str], QListWidgetItem]):
@@ -401,7 +370,6 @@ class MainWindow(QMainWindow):
         self.setTextItemColor(item, "done")
 
     def closeEvent(self, _event) -> None:
-        # profiler.open_in_browser()
         self.capture_window.close()
 
     def addTextItem(self, text, status) -> QListWidgetItem:
