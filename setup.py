@@ -23,23 +23,9 @@ build_exe_options = {
     "includes": [
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
-        # "paddleocr.ppocr.utils.logging",
-        # "paddleocr.ppocr.postprocess",
-        # "paddleocr.ppocr.utils.utility",
-        # "paddleocr.ppocr.utils.poly_nms",
-        # "paddleocr.ppocr.utils.e2e_utils.pgnet_pp_utils",
-        # "paddleocr.ppocr.data",
-        # "paddleocr.ppocr.data.imaug",
-        # "paddleocr.ppocr.data.imaug.vqa.augment",
-        # "paddleocr.ppocr.data.simple_dataset",
     ],
     "include_files": [
-        (paddleocr_path, 'lib/paddleocr')
-        # (os.path.join(paddleocr_path, "tools"), "lib/paddleocr/tools"),
-        # (
-        #     os.path.join(paddleocr_path, "ppocr", "utils", "e2e_utils"),
-        #     "lib/paddleocr/ppocr/utils/e2e_utils",
-        # ),
+        (paddleocr_path, "lib/paddleocr")
     ],  # Use this to include additional files or directories if necessary
 }
 

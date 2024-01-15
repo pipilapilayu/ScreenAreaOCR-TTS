@@ -1,5 +1,21 @@
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication, QMainWindow, QHBoxLayout, QCheckBox, QListWidget, QListWidgetItem
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QApplication,
+    QMainWindow,
+    QHBoxLayout,
+    QCheckBox,
+    QListWidget,
+    QListWidgetItem,
+    QMenuBar,
+    QDialog,
+    QLineEdit,
+    QDialogButtonBox,
+    QPushButton,
+    QMessageBox,
+)
 from PyQt6.QtGui import QPainter, QColor, QMouseEvent
 from screenshot_utils import take_region_screenshot
 from queue import Queue
@@ -23,7 +39,9 @@ class CaptureWindow(QMainWindow):
         super().__init__()
         self.border_color = QColor(255, 0, 0)  # Red color
         self.border_width = 10  # Border width in pixels
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.grab_flags = [False] * 4  # Share grab status between mouse event callbacks
@@ -46,7 +64,7 @@ class CaptureWindow(QMainWindow):
 
         # Draw right border
         painter.drawLine(self.width(), 0, self.width(), self.height())
-    
+
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressPos = event.globalPosition().toPoint()
@@ -59,7 +77,9 @@ class CaptureWindow(QMainWindow):
             left_edge = abs(self.mousePressPos.x() - rect.left()) < self.border_width
             right_edge = abs(self.mousePressPos.x() - rect.right()) < self.border_width
             top_edge = abs(self.mousePressPos.y() - rect.top()) < self.border_width
-            bottom_edge = abs(self.mousePressPos.y() - rect.bottom()) < self.border_width
+            bottom_edge = (
+                abs(self.mousePressPos.y() - rect.bottom()) < self.border_width
+            )
             for i, v in enumerate((left_edge, right_edge, top_edge, bottom_edge)):
                 self.grab_flags[i] = v
 
@@ -75,13 +95,21 @@ class CaptureWindow(QMainWindow):
 
             # Resize window accordingly
             if left_edge:
-                rect.setLeft(min(rect.left() + dx, rect.right() - (self.border_width << 1)))
+                rect.setLeft(
+                    min(rect.left() + dx, rect.right() - (self.border_width << 1))
+                )
             if right_edge:
-                rect.setRight(max(rect.right() + dx, rect.left() + (self.border_width << 1)))
+                rect.setRight(
+                    max(rect.right() + dx, rect.left() + (self.border_width << 1))
+                )
             if top_edge:
-                rect.setTop(min(rect.top() + dy, rect.bottom() - (self.border_width << 1)))
+                rect.setTop(
+                    min(rect.top() + dy, rect.bottom() - (self.border_width << 1))
+                )
             if bottom_edge:
-                rect.setBottom(max(rect.bottom() + dy, rect.top() + (self.border_width << 1)))
+                rect.setBottom(
+                    max(rect.bottom() + dy, rect.top() + (self.border_width << 1))
+                )
 
             self.setGeometry(rect)
 
@@ -123,13 +151,17 @@ class LightWidget(QWidget):
 class TaskWorker(QThread):
     task_finished = pyqtSignal(object)
 
-    def __init__(self, task_queue: Queue, task_handler: Callable[..., Any], light_indicator: Optional[LightWidget]=None, lock=None) -> None:
+    def __init__(
+        self,
+        task_queue: Queue,
+        task_handler: Callable[..., Any],
+        light_indicator: Optional[LightWidget] = None,
+    ) -> None:
         super().__init__()
         self.task_queue = task_queue
         self.task_handler = task_handler
         self.running = True
         self.light_indicator = light_indicator
-        self.lock = lock
 
     def run(self) -> None:
         while self.running:
@@ -138,11 +170,7 @@ class TaskWorker(QThread):
             else:
                 if self.light_indicator is not None:
                     self.light_indicator.turn_on()
-                if self.lock is not None:
-                    with self.lock:
-                        task = self.task_queue.get()
-                else:
-                    task = self.task_queue.get()
+                task = self.task_queue.get()
                 result = self.task_handler(task)
                 self.task_queue.task_done()
                 if self.light_indicator is not None:
@@ -153,64 +181,124 @@ class TaskWorker(QThread):
         self.running = False
 
 
-class MainWindow(QMainWindow):
-    def __init__(self, capture_window: CaptureWindow, tts_api: str="http://localhost:47867/tts?format=wav&text=%s"):
-        super().__init__()
+class TTSHelper:
+    """Help TaskWorker to process TTS tasks, while providing a way to change TTS settings during runtime
+    Basically a function with it's parameters partially applied & could be modified
+    """
 
+    def __init__(self, tts_client: reqwest_wrapper.TTSClient, tts_api: str) -> None:
+        self.tts_client = tts_client
         self.tts_api = tts_api
 
-        # please refer to reqwest_wrapper crate for more details...
-        self.tts_client = reqwest_wrapper.TTSClient()
+    def __call__(
+        self, task: Tuple[str, QListWidgetItem]
+    ) -> Tuple[Result[bytes, str], QListWidgetItem]:
+        text, item = task
+        print("Processing TTS request:", text)
+
+        def inner(req_url: str) -> Result[bytes, str]:
+            try:
+                audio_data = self.tts_client.get_tts(req_url)
+                return Ok(audio_data)
+            except Exception as e:
+                return Err(str(e))
+
+        res = inner(self.tts_api % text)
+        return res, item
+
+
+class TTSAPIInputDialog(QDialog):
+    def __init__(self, parent: QWidget | None, tts_helper: TTSHelper) -> None:
+        super().__init__(parent)
+        self.tts_helper = tts_helper
+
+        self.setWindowTitle("Set TTS API URL")
+        self.layout = QVBoxLayout(self)
+
+        urlLine = QHBoxLayout()
+        self.urlText = QLineEdit(self.tts_helper.tts_api, self)
+
+        self.testButton = QPushButton("Test", self)
+        self.testButton.clicked.connect(self.testAPI)
+
+        urlLine.addWidget(self.urlText)
+        urlLine.addWidget(self.testButton)
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            Qt.Orientation.Horizontal,
+            self,
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        self.layout.addLayout(urlLine)
+        self.layout.addWidget(self.buttons)
+
+    def testAPI(self):
+        url = self.urlText.text()
+        try:
+            self.testButton.setEnabled(False)
+            audio_data = self.tts_helper.tts_client.get_tts(url % "测试")
+            data, fs = sf.read(BytesIO(audio_data))
+            sd.play(data, fs)
+            sd.wait()
+            self.testButton.setEnabled(True)
+        except Exception as e:
+            messageBox = QMessageBox(self)
+            messageBox.setText(str(e))
+            messageBox.exec()
+            self.testButton.setEnabled(True)
+
+    @classmethod
+    def getNewURL(cls, parent: QWidget | None, tts_helper: TTSHelper) -> str:
+        dialog = cls(parent, tts_helper)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.urlText.text()
+        else:
+            return tts_helper.tts_api
+
+
+class MainWindow(QMainWindow):
+    def __init__(
+        self,
+        capture_window: CaptureWindow,
+        tts_api: str = "http://localhost:47867/tts?format=wav&text=%s",
+    ):
+        super().__init__()
 
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.capture_window = capture_window
         self.capture_window.show()
-        self.label = QLabel("Hello World")
-        self.setCentralWidget(self.label)
 
-        self.toggleCaptureWindowCheckbox = QCheckBox("Capture window", self)
+        self.toggleCaptureWindowCheckbox = QCheckBox("Show capture area", self)
         self.toggleCaptureWindowCheckbox.setChecked(True)
         self.toggleCaptureWindowCheckbox.stateChanged.connect(self.toggleCaptureWindow)
 
-        # keyboard.add_hotkey('ctrl+shift+q', self.start_ocr_tts_pipeline)
+        # We use a rust-based TTS client, about 10x faster than python socket.connect
+        tts_client = reqwest_wrapper.TTSClient()
+
+        # Create helper function for TTS tasks
+        self.tts_helper = TTSHelper(tts_client, tts_api)
+
+        # Create a menu bar. We do this after tts_helper is created because the action changes tts_helper's members
+        menuBar = QMenuBar(self)
+        settingsMenu = menuBar.addMenu("Settings")
+        assert settingsMenu is not None
+        settingsMenu.addAction("Set TTS API URL", self.setTTSAPIWithDialog)
+        self.setMenuBar(menuBar)
+
+        # Setup hotkeys. TODO make it more general
         mouse_listener = mouse.Listener(on_click=self.on_click)
         mouse_listener.start()
 
-        # Create a checkbox
-        # self.toggleRunCheckbox = QCheckBox("Run", self)
-        # self.toggleRunCheckbox.stateChanged.connect(self.toggleRun)
-
-        # # Create a double spin box for capture duration
-        # self.captureDurationSpinBox = QDoubleSpinBox(self)
-        # self.captureDurationSpinBox.setRange(0.2, 60.0)  # From 0.2s to 60s
-        # self.captureDurationSpinBox.setSingleStep(0.1)  # Increment by 0.1s
-        # self.captureDurationSpinBox.setDecimals(1)  # One decimal place
-        # self.captureDurationSpinBox.setValue(0.5)  # Default value
-        # self.captureDurationSpinBox.valueChanged.connect(self.captureDurationChanged)
-
-        # self.queryTimer = QTimer(self)
-        # self.queryTimer.timeout.connect(self.performRollingQuery)
-
-        # # Create the light indicator
-        # self.light_indicator = LightWidget(self)
-        # self.light_indicator.turn_off()  # Initially off
-
-        # # Timer to control the light duration
-        # self.lightTimer = QTimer(self)
-        # self.lightTimer.setInterval(200)  # Light duration in milliseconds
-        # self.lightTimer.setSingleShot(True)  # Only trigger once each time it's started
-        # self.lightTimer.timeout.connect(self.light_indicator.turn_off)
-
         # Add two more lights to indicate OCR & TTS worker status for debugging
-        self.ocr_light = LightWidget(self, QColor(255, 232, 189), QColor('black'))
-        self.tts_light = LightWidget(self, QColor(186, 227, 255), QColor('black'))
+        self.ocr_light = LightWidget(self, QColor(255, 232, 189), QColor("black"))
+        self.tts_light = LightWidget(self, QColor(186, 227, 255), QColor("black"))
 
         # Create the list widget for displaying the text deque
         self.textListWidget = QListWidget(self)
-
-        # for TTS dedup, we need to keep track of the last text, using lock
-        self.tts_que_lock = Lock()
-        self.last_tts_text: Optional[str] = None
 
         # Create queues & task workers for the OCR and TTS tasks
         self.ocr_queue = Queue()
@@ -218,7 +306,7 @@ class MainWindow(QMainWindow):
         self.player_queue = Queue()
         self.ocr_worker = TaskWorker(self.ocr_queue, self.process_ocr, self.ocr_light)
         self.ocr_worker.task_finished.connect(self.onOcrFinished)
-        self.tts_worker = TaskWorker(self.tts_queue, partial(self.process_tts, self.tts_client, self.tts_api), self.tts_light, self.tts_que_lock)
+        self.tts_worker = TaskWorker(self.tts_queue, self.tts_helper, self.tts_light)
         self.tts_worker.task_finished.connect(self.onTtsFinished)
         self.player_worker = TaskWorker(self.player_queue, self.send_audio)
         self.player_worker.task_finished.connect(self.onPlayerFinished)
@@ -227,16 +315,9 @@ class MainWindow(QMainWindow):
         self.tts_worker.start()
         self.player_worker.start()
 
-        # cache of last screenshot
-        # self.last_screenshot: np.ndarray = np.zeros((1, 1, 3), dtype=np.uint8)
-
         # Layout
         layout = QHBoxLayout()
         layout.addWidget(self.toggleCaptureWindowCheckbox)
-        # layout.addWidget(self.toggleRunCheckbox)
-        # layout.addWidget(QLabel("Capture Duration (s):"))
-        # layout.addWidget(self.captureDurationSpinBox)
-        # layout.addWidget(self.light_indicator)
         layout.addWidget(self.ocr_light)
         layout.addWidget(self.tts_light)
 
@@ -263,16 +344,7 @@ class MainWindow(QMainWindow):
         self.ocr_queue.put(region_screenshot)
 
     def mousePressEvent(self, event):
-        print("Mouse pressed", event.button())
-
         super().mousePressEvent(event)
-
-    # def toggleRun(self, state: int):
-    #     if state == 2:
-    #         print("Starting rolling query..., interval:", self.captureDurationSpinBox.value())
-    #         self.queryTimer.start(int(self.captureDurationSpinBox.value() * 1000))  # Start the timer
-    #     else:
-    #         self.queryTimer.stop()
 
     def toggleCaptureWindow(self, state: int):
         if state == 2:
@@ -280,49 +352,14 @@ class MainWindow(QMainWindow):
         else:
             self.capture_window.hide()
 
-    # def captureDurationChanged(self, value):
-    #     # Handle the change in capture duration value
-    #     # This function can signal the capture functionality to update its timing
-    #     # Update the timer interval
-    #     print(f"Capture duration set to: {value} seconds")
-    #     if self.toggleRunCheckbox.isChecked():
-    #         self.queryTimer.start(int(value * 1000))  # QTimer expects milliseconds
-
-    # def performRollingQuery(self):
-    #     # Call the capture window function and set the color of the indication light
-    #     # This is where you'd trigger the screen capture and update the UI
-    #     self.light_indicator.turn_on()
-    #     self.lightTimer.start()  # Start the timer that will turn off the light after the set interval
-
-    #     hwnd = int(self.capture_window.winId())
-
-    #     # Use win32gui to get the window coordinates
-    #     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-    #     region_screenshot = take_region_screenshot(left, top, right, bottom)
-
-    #     if self.last_screenshot is not None:
-    #         # if the screenshot is similar enough, don't bother doing OCR again, but how do we know if it's similar enough?
-    #         if self.last_screenshot.shape == region_screenshot.shape:
-    #             if structural_similarity(self.last_screenshot, region_screenshot, channel_axis=-1) < 0.95:
-    #                 self.ocr_queue.put(region_screenshot)
-    #         else:
-    #             self.ocr_queue.put(region_screenshot)
-    #     self.last_screenshot = region_screenshot
+    def setTTSAPIWithDialog(self):
+        new_url = TTSAPIInputDialog.getNewURL(self, self.tts_helper)
+        self.tts_helper.tts_api = new_url
 
     @staticmethod
     def process_ocr(img: np.ndarray) -> Result[str, str]:
         logger.info("Processing OCR request...")
         return Ok(paddle_ocr_infer_fn(img))
-        # pickle_img = pickle.dumps(img)
-        # try:
-        #     response = requests.post(ocr_api, files={"file": pickle_img})
-        #     if response.status_code == 200:
-        #         return Ok(response.json().get("result", ""))
-        #     else:
-        #         return Err(json.dumps(response.json().get("error", "")))
-        # except requests.exceptions.RequestException as e:
-        #     return Err(str(e))
-
 
     def onOcrFinished(self, res: Result[str, str]):
         # Update the UI with the OCR result
@@ -333,19 +370,6 @@ class MainWindow(QMainWindow):
                     self.tts_queue.put((text, item))
             case Err(error_data):
                 print(error_data)
-
-    @staticmethod
-    def process_tts(tts_client: reqwest_wrapper.TTSClient, tts_api: str, task: Tuple[str, QListWidgetItem]) -> Tuple[Result[bytes, str], QListWidgetItem]:
-        text, item = task
-        print("Processing TTS request..:", text)
-        def inner(req_url: str) -> Result[bytes, str]:
-            try:
-                audio_data = tts_client.get_tts(req_url)
-                return Ok(audio_data)
-            except Exception as e:
-                return Err(str(e))
-        res = inner(tts_api % text)
-        return res, item
 
     def onTtsFinished(self, res: Tuple[Result[bytes, str], QListWidgetItem]):
         # Update the UI with the TTS result
@@ -382,13 +406,15 @@ class MainWindow(QMainWindow):
     def setTextItemColor(self, item, status):
         # Change the color of the list item based on its status
         color_dict = {
-            'ttsing': (QColor(255, 232, 189), QColor('black')),
-            'ready': (QColor(186, 227, 255), QColor('black')),
-            'error': (QColor(255, 163, 181), QColor('black')),
-            'done': (QColor(227, 255, 221), QColor('black')),
-            'discarded': (QColor('grey'), QColor('black')),
+            "ttsing": (QColor(255, 232, 189), QColor("black")),
+            "ready": (QColor(186, 227, 255), QColor("black")),
+            "error": (QColor(255, 163, 181), QColor("black")),
+            "done": (QColor(227, 255, 221), QColor("black")),
+            "discarded": (QColor("grey"), QColor("black")),
         }
-        background_color, text_color = color_dict.get(status, (QColor('white'), QColor('black')))
+        background_color, text_color = color_dict.get(
+            status, (QColor("white"), QColor("black"))
+        )
         item.setBackground(background_color)
         item.setForeground(text_color)
 

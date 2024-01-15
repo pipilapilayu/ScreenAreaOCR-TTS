@@ -10,6 +10,7 @@ app = Flask(__name__)
 
 
 from paddleocr import PaddleOCR
+
 ocr_session = PaddleOCR(lang="ch", det=False, use_gpu=True)
 
 
@@ -18,7 +19,7 @@ def paddle_ocr_infer_fn(img: np.ndarray) -> str:
     result = ocr_session.ocr(img, cls=False)
     logger.info("end ocr")
     try:
-        return ''.join([line[-1][0] for line in result[0]])
+        return "".join([line[-1][0] for line in result[0]])
     except Exception as e:
         print(e)
         return ""
@@ -40,7 +41,6 @@ def ocr():
     file = request.files["file"]
     img: np.ndarray = pickle.loads(file.read())
     return jsonify({"result": paddle_ocr_infer_fn(img)})
-
 
 
 if __name__ == "__main__":

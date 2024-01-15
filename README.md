@@ -341,7 +341,8 @@ Ensure that use_gpu is `True`. Otherwise you may need to double check CUDA & CUD
 python -m venv .venv_win
 .venv_win\Scripts\activate
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install flask paddlepaddle-gpu paddleocr pyqt6 loguru result sounddevice pynput mss pywin32 soundfile cx_Freeze maturin
+pip install paddlepaddle-gpu==2.6.0.post120 -f https://www.paddlepaddle.org.cn/whl/windows/mkl/avx/stable.html
+pip install flask paddleocr pyqt6 loguru result sounddevice pynput mss pywin32 soundfile cx_Freeze maturin
 ```
 
 ### Fix paddlepaddle bug
@@ -381,7 +382,11 @@ python setup.py build_exe
 
 - [x] Make OCR async
 - [x] Make TTS tasks async
-- [ ] Add GUI options to set APIs
+- [x] Add GUI options to set APIs
 - [ ] Add config files to store API / capture window info
+- [ ] Add global logging
+- [ ] Make capture window separated from main window by default
+- [ ] Add option to stay on top
+- [ ] Auto stick to the bottom
+- [ ] Maybe auto clean up the queue?
 - [x] Make it compile into ~~single file~~ exe using ~~pyinstaller~~ cx_Freeze
-
