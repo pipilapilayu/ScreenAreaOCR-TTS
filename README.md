@@ -375,8 +375,10 @@ cd ..
 ### Use cx_Freeze to compile
 
 ```powershell
-python setup.py build_exe
+python setup.py build_exe .\output_build
 ```
+
+Each compile would write ~8G data to disk. You may want to set the destination on a mechanical hard drive to avoid worn out SSD.
 
 ## Todo
 
