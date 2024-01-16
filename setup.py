@@ -1,9 +1,11 @@
 from cx_Freeze import setup, Executable
-
+import os
 import sys
+import shutil
 
 sys.setrecursionlimit(sys.getrecursionlimit() * 50)
-import os
+
+target_dir = sys.argv[-1]
 
 # Path to the paddleocr package in your environment
 paddleocr_path = os.path.join(
@@ -27,6 +29,7 @@ build_exe_options = {
     "include_files": [
         (paddleocr_path, "lib/paddleocr")
     ],  # Use this to include additional files or directories if necessary
+    "build_exe": target_dir
 }
 
 # Define the base and executables
@@ -42,3 +45,5 @@ setup(
     options={"build_exe": build_exe_options},
     executables=executables,
 )
+
+shutil.copyfile("start.ps1", os.path.join(target_dir, "start.ps1"))
