@@ -1,37 +1,39 @@
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QLabel,
-    QApplication,
-    QMainWindow,
-    QHBoxLayout,
-    QCheckBox,
-    QListWidget,
-    QListWidgetItem,
-    QMenuBar,
-    QDialog,
-    QLineEdit,
-    QDialogButtonBox,
-    QPushButton,
-    QMessageBox,
-)
-from PyQt6.QtGui import QPainter, QColor, QMouseEvent
-from screenshot_utils import take_region_screenshot
-from queue import Queue
-import win32gui
-import numpy as np
-from typing import Optional, Callable, Any, Tuple, Literal
-from result import Result, Ok, Err
-from functools import partial
-import sounddevice as sd
-import soundfile as sf
-from io import BytesIO
-from threading import Lock
-from pynput import mouse, keyboard
 from loguru import logger
-from ocr_server import paddle_ocr_infer_fn
-import reqwest_wrapper
+
+logger.add("gui.log", rotation="1 week", backtrace=True, diagnose=True)    # Once the file is too old, it's rotated
+
+with logger.catch():
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal
+    from PyQt6.QtWidgets import (
+        QWidget,
+        QVBoxLayout,
+        QLabel,
+        QApplication,
+        QMainWindow,
+        QHBoxLayout,
+        QCheckBox,
+        QListWidget,
+        QListWidgetItem,
+        QMenuBar,
+        QDialog,
+        QLineEdit,
+        QDialogButtonBox,
+        QPushButton,
+        QMessageBox,
+    )
+    from PyQt6.QtGui import QPainter, QColor, QMouseEvent
+    from screenshot_utils import take_region_screenshot
+    from queue import Queue
+    import win32gui
+    import numpy as np
+    from typing import Optional, Callable, Any, Tuple, Literal
+    from result import Result, Ok, Err
+    import sounddevice as sd
+    import soundfile as sf
+    from io import BytesIO
+    from pynput import mouse, keyboard
+    from ocr_server import paddle_ocr_infer_fn
+    import reqwest_wrapper
 
 
 class CaptureWindow(QMainWindow):
@@ -194,7 +196,7 @@ class TTSHelper:
         self, task: Tuple[str, QListWidgetItem]
     ) -> Tuple[Result[bytes, str], QListWidgetItem]:
         text, item = task
-        print("Processing TTS request:", text)
+        logger.info("Processing TTS request:", text)
 
         def inner(req_url: str) -> Result[bytes, str]:
             try:
@@ -484,7 +486,7 @@ class MainWindow(QMainWindow):
                     item = self.addTextItem(text, "ttsing")
                     self.tts_queue.put((text, item))
             case Err(error_data):
-                print(error_data)
+                logger.warning("OCR job failed, error info:", error_data)
 
     def onTtsFinished(self, res: Tuple[Result[bytes, str], QListWidgetItem]):
         # Update the UI with the TTS result
@@ -535,11 +537,12 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    app = QApplication([])
-    capture_window = CaptureWindow()
+    with logger.catch():
+        app = QApplication([])
+        capture_window = CaptureWindow()
 
-    status_bar_window = MainWindow(capture_window)
+        status_bar_window = MainWindow(capture_window)
 
-    status_bar_window.show()
+        status_bar_window.show()
 
-    app.exec()
+        app.exec()
