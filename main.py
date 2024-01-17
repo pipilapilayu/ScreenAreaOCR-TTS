@@ -34,10 +34,11 @@ with logger.catch():
     from pynput import mouse, keyboard
     from ocr_server import paddle_ocr_infer_fn
     import reqwest_wrapper
+    from config_utils import Config, load_config, save_config, HotKey
 
 
 class CaptureWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, config: Config):  # actually Rc<RefCell<Config>>
         super().__init__()
         self.border_color = QColor(255, 0, 0)  # Red color
         self.border_width = 10  # Border width in pixels
@@ -46,6 +47,9 @@ class CaptureWindow(QMainWindow):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.config = config
+        self.move(*config.capture_window_pos)
+        self.resize(*config.capture_window_size)
         self.grab_flags = [False] * 4  # Share grab status between mouse event callbacks
 
     def paintEvent(self, _event):
@@ -124,6 +128,10 @@ class CaptureWindow(QMainWindow):
             for i, _ in enumerate(self.grab_flags):
                 self.grab_flags[i] = False
 
+            rect = self.geometry()
+            self.config.capture_window_pos = (rect.left(), rect.top())
+            self.config.capture_window_size = (rect.width(), rect.height())
+
 
 class LightWidget(QWidget):
     def __init__(self, parent=None, on_color=QColor("green"), off_color=QColor("red")):
@@ -188,9 +196,9 @@ class TTSHelper:
     Basically a function with it's parameters partially applied & could be modified
     """
 
-    def __init__(self, tts_client: reqwest_wrapper.TTSClient, tts_api: str) -> None:
+    def __init__(self, tts_client: reqwest_wrapper.TTSClient, tts_api_url: str) -> None:
         self.tts_client = tts_client
-        self.tts_api = tts_api
+        self.tts_api_url = tts_api_url
 
     def __call__(
         self, task: Tuple[str, QListWidgetItem]
@@ -205,7 +213,7 @@ class TTSHelper:
             except Exception as e:
                 return Err(str(e))
 
-        res = inner(self.tts_api % text)
+        res = inner(self.tts_api_url % text)
         return res, item
 
 
@@ -218,7 +226,7 @@ class TTSAPIInputDialog(QDialog):
         self.layout = QVBoxLayout(self)
 
         urlLine = QHBoxLayout()
-        self.urlText = QLineEdit(self.tts_helper.tts_api, self)
+        self.urlText = QLineEdit(self.tts_helper.tts_api_url, self)
 
         self.testButton = QPushButton("Test", self)
         self.testButton.clicked.connect(self.testAPI)
@@ -259,14 +267,11 @@ class TTSAPIInputDialog(QDialog):
         if result == QDialog.DialogCode.Accepted:
             return dialog.urlText.text()
         else:
-            return tts_helper.tts_api
-
-
-HotkeyType = Tuple[Literal["keyboard", "mouse", "null"], str]
+            return tts_helper.tts_api_url
 
 
 class HotKeyInputDialog(QDialog):
-    def __init__(self, parent: QWidget | None, cur_key: HotkeyType) -> None:
+    def __init__(self, parent: QWidget | None, cur_key: HotKey) -> None:
         super().__init__(parent)
         self.key = cur_key
 
@@ -278,8 +283,8 @@ class HotKeyInputDialog(QDialog):
 
         self.labelLayout = QHBoxLayout()
         self.labelLayout.addWidget(QLabel("Current hotkey: ", self))
-        self.keyTypeLabel = QLabel(self.key[0], self)
-        self.keyNameLabel = QLabel(self.key[1], self)
+        self.keyTypeLabel = QLabel(self.key.key_type, self)
+        self.keyNameLabel = QLabel(self.key.key_name, self)
         self.labelLayout.addWidget(self.keyTypeLabel)
         self.labelLayout.addWidget(self.keyNameLabel)
 
@@ -315,27 +320,27 @@ class HotKeyInputDialog(QDialog):
         self.rec_button.setText("Record")
         self.rec_button.setEnabled(True)
 
-    def update_key(self, key: HotkeyType):
+    def update_key(self, key: HotKey):
         self.key = key
-        self.keyTypeLabel.setText(key[0])
-        self.keyNameLabel.setText(key[1])
+        self.keyTypeLabel.setText(key.key_type)
+        self.keyNameLabel.setText(key.key_name)
 
     def on_kb_click(self, key: keyboard.Key | keyboard.KeyCode | None):
         match key:
             case keyboard.Key():
-                self.update_key(("keyboard", key.name))
+                self.update_key(HotKey(key_type="keyboard", key_name=key.name))
             case keyboard.KeyCode():
                 if key.char:
-                    self.update_key(("keyboard", key.char))
+                    self.update_key(HotKey(key_type="keyboard", key_name=key.char))
         self.stop_rec()
     
     def on_ms_click(self, _x, _y, button: mouse.Button, pressed: bool):
         if pressed:
-            self.update_key(("mouse", button.name))
+            self.update_key(HotKey(key_type="mouse", key_name=button.name))
             self.stop_rec()
 
     @classmethod
-    def getNewHotKey(cls, parent: QWidget | None, cur_key: HotkeyType) -> HotkeyType:
+    def getNewHotKey(cls, parent: QWidget | None, cur_key: HotKey) -> HotKey:
         # return nothing since we register to global hotkey
         dialog = cls(parent, cur_key)
         result = dialog.exec()
@@ -346,7 +351,7 @@ class HotKeyInputDialog(QDialog):
 
 
 class SingleKeyHotkeyListener:
-    def __init__(self, input_key: HotkeyType, callback: Callable[[], None]):
+    def __init__(self, input_key: HotKey, callback: Callable[[], None]):
         self.input_key = input_key
         self.callback = callback
 
@@ -370,11 +375,11 @@ class SingleKeyHotkeyListener:
                 if key.char:
                     extracted_key = key.char
 
-        if ("keyboard", extracted_key) == self.input_key:
+        if extracted_key is not None and HotKey(key_type="keyboard", key_name=extracted_key) == self.input_key:
             self.callback()
 
     def on_mouse_click(self, _x, _y, button: mouse.Button, pressed: bool):
-        if ("mouse", button.name) == self.input_key and pressed:
+        if HotKey(key_type="mouse", key_name=button.name) == self.input_key and pressed:
             self.callback()
 
 
@@ -382,9 +387,11 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         capture_window: CaptureWindow,
-        tts_api: str = "http://localhost:47867/tts?format=wav&text=%s",
+        config: Config  # actually Rc<RefCell<Config>>
     ):
         super().__init__()
+
+        self.config = config
 
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.capture_window = capture_window
@@ -398,7 +405,7 @@ class MainWindow(QMainWindow):
         tts_client = reqwest_wrapper.TTSClient()
 
         # Create helper function for TTS tasks
-        self.tts_helper = TTSHelper(tts_client, tts_api)
+        self.tts_helper = TTSHelper(tts_client, config.tts_api_url)
 
         # Create a menu bar. We do this after tts_helper is created because the action changes tts_helper's members
         menuBar = QMenuBar(self)
@@ -409,7 +416,7 @@ class MainWindow(QMainWindow):
         self.setMenuBar(menuBar)
 
         # Setup hotkeys
-        self.hotkey_listener = SingleKeyHotkeyListener(("mouse", "middle"), self.start_ocr_tts_pipeline)
+        self.hotkey_listener = SingleKeyHotkeyListener(config.hot_key, self.start_ocr_tts_pipeline)
 
         # Add two more lights to indicate OCR & TTS worker status for debugging
         self.ocr_light = LightWidget(self, QColor(255, 232, 189), QColor("black"))
@@ -465,13 +472,15 @@ class MainWindow(QMainWindow):
 
     def setTTSAPIWithDialog(self):
         new_url = TTSAPIInputDialog.getNewURL(self, self.tts_helper)
-        self.tts_helper.tts_api = new_url
+        self.tts_helper.tts_api_url = new_url
+        self.config.tts_api_url = new_url
 
     def setHotKeyWithDialog(self):
         old_key = self.hotkey_listener.input_key
-        self.hotkey_listener.input_key = ("null", "")  # temporary disable
+        self.hotkey_listener.input_key = HotKey("null", "")  # temporary disable
         new_key = HotKeyInputDialog.getNewHotKey(self, old_key)
         self.hotkey_listener.input_key = new_key
+        self.config.hot_key = new_key
 
     @staticmethod
     def process_ocr(img: np.ndarray) -> Result[str, str]:
@@ -512,6 +521,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, _event) -> None:
         self.capture_window.close()
+        self.hotkey_listener.stop_listeners()
 
     def addTextItem(self, text: str, status: str) -> QListWidgetItem:
         # Create a new list item with the provided text
@@ -539,10 +549,10 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     with logger.catch():
         app = QApplication([])
-        capture_window = CaptureWindow()
-
-        status_bar_window = MainWindow(capture_window)
-
+        config = load_config("./config.json")
+        capture_window = CaptureWindow(config)
+        status_bar_window = MainWindow(capture_window, config)
         status_bar_window.show()
-
         app.exec()
+
+        save_config("./config.json", config)

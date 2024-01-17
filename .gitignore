@@ -5,3 +5,4 @@ __pycache__
 *.wav
 *.lprof
 gui.log
+config.json

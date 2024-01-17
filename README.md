@@ -393,7 +393,7 @@ Each compile would write ~8G data to disk. You may want to set the destination o
 - [x] Make OCR async
 - [x] Make TTS tasks async
 - [x] Add GUI options to set APIs
-- [ ] Add config files to store API / capture window info
+- [x] Add config files to store API / capture window info
 - [x] Add global logging
 - [ ] Make capture window separated from main window by default
 - [ ] Add option to stay on top
