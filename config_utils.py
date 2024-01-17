@@ -38,22 +38,25 @@ class Config:
     capture_window_pos: Tuple[int, int]
     capture_window_size: Tuple[int, int]
     hot_key: HotKey
+    max_history_requests: int  # the number of requests to keep in the log window
 
     def to_json(self) -> Json:
         return {
             "tts_api_url": self.tts_api_url,
             "capture_window_pos": self.capture_window_pos,
             "capture_window_size": self.capture_window_size,
-            "hot_key": self.hot_key.to_json()
+            "hot_key": self.hot_key.to_json(),
+            "max_history_requests": self.max_history_requests
         }
     
     @classmethod
     def from_json(cls, json: Json) -> "Config":
-        tts_api_url = json["tts_api_url"]
+        tts_api_url = json["tts_api_url"]  # or from Default::default()...
         capture_window_pos = json["capture_window_pos"]
         capture_window_size = json["capture_window_size"]
         hot_key = HotKey.from_json(json["hot_key"])
-        return Config(tts_api_url, capture_window_pos, capture_window_size, hot_key)
+        max_history_requests = json["max_history_requests"]
+        return Config(tts_api_url, capture_window_pos, capture_window_size, hot_key, max_history_requests)
 
     @classmethod
     def default(cls) -> "Config":
@@ -61,7 +64,8 @@ class Config:
             tts_api_url="http://localhost:47867/tts?format=wav&text=%s",
             capture_window_pos=(200, 200),
             capture_window_size=(600, 200),
-            hot_key=HotKey.default()
+            hot_key=HotKey.default(),
+            max_history_requests=10
         )
 
 

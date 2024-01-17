@@ -395,8 +395,8 @@ Each compile would write ~8G data to disk. You may want to set the destination o
 - [x] Add GUI options to set APIs
 - [x] Add config files to store API / capture window info
 - [x] Add global logging
-- [ ] Make capture window separated from main window by default
+- [x] Make capture window separated from main window by default
 - [ ] Add option to stay on top
-- [ ] Auto stick to the bottom
-- [ ] Maybe auto clean up the queue?
+- [x] Auto stick to the bottom
+- [x] Maybe auto clean up the queue?
 - [x] Make it compile into ~~single file~~ exe using ~~pyinstaller~~ cx_Freeze

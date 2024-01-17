@@ -528,6 +528,11 @@ class MainWindow(QMainWindow):
         item = QListWidgetItem(text)
         self.setTextItemColor(item, status)
         self.textListWidget.addItem(item)
+        scroll_bar = self.textListWidget.verticalScrollBar()
+        if scroll_bar is not None and scroll_bar.value() == scroll_bar.maximum():
+            self.textListWidget.scrollToBottom()
+        if self.textListWidget.count() > self.config.max_history_requests:
+            self.textListWidget.takeItem(0)
         return item
 
     def setTextItemColor(self, item: QListWidgetItem, status: str):
