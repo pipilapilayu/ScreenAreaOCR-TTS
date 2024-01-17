@@ -21,14 +21,14 @@ from screenshot_utils import take_region_screenshot
 from queue import Queue
 import win32gui
 import numpy as np
-from typing import Optional, Callable, Any, Tuple
+from typing import Optional, Callable, Any, Tuple, Literal
 from result import Result, Ok, Err
 from functools import partial
 import sounddevice as sd
 import soundfile as sf
 from io import BytesIO
 from threading import Lock
-from pynput import mouse
+from pynput import mouse, keyboard
 from loguru import logger
 from ocr_server import paddle_ocr_infer_fn
 import reqwest_wrapper
@@ -260,6 +260,122 @@ class TTSAPIInputDialog(QDialog):
             return tts_helper.tts_api
 
 
+HotkeyType = Tuple[Literal["keyboard", "mouse", "null"], str]
+
+
+class HotKeyInputDialog(QDialog):
+    def __init__(self, parent: QWidget | None, cur_key: HotkeyType) -> None:
+        super().__init__(parent)
+        self.key = cur_key
+
+        self.rec_kb_listener = None
+        self.rec_ms_listener = None
+
+        self.setWindowTitle("Set Hotkey")
+        self.layout = QVBoxLayout(self)
+
+        self.labelLayout = QHBoxLayout()
+        self.labelLayout.addWidget(QLabel("Current hotkey: ", self))
+        self.keyTypeLabel = QLabel(self.key[0], self)
+        self.keyNameLabel = QLabel(self.key[1], self)
+        self.labelLayout.addWidget(self.keyTypeLabel)
+        self.labelLayout.addWidget(self.keyNameLabel)
+
+        self.rec_button = QPushButton("Record", self)
+        self.rec_button.clicked.connect(self.record)
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            Qt.Orientation.Horizontal,
+            self,
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        self.layout.addLayout(self.labelLayout)
+        self.layout.addWidget(self.rec_button)
+        self.layout.addWidget(self.buttons)
+
+    def record(self):
+        self.rec_kb_listener = keyboard.Listener(on_press=self.on_kb_click)
+        self.rec_ms_listener = mouse.Listener(on_click=self.on_ms_click)
+        self.rec_kb_listener.start()
+        self.rec_ms_listener.start()
+        self.rec_button.setText("Recording...")
+        self.rec_button.setEnabled(False)
+        self.rec_kb_listener.wait()
+        self.rec_ms_listener.wait()
+
+    def stop_rec(self):
+        if self.rec_kb_listener is not None and self.rec_ms_listener is not None:
+            self.rec_kb_listener.stop()
+            self.rec_ms_listener.stop()
+        self.rec_button.setText("Record")
+        self.rec_button.setEnabled(True)
+
+    def update_key(self, key: HotkeyType):
+        self.key = key
+        self.keyTypeLabel.setText(key[0])
+        self.keyNameLabel.setText(key[1])
+
+    def on_kb_click(self, key: keyboard.Key | keyboard.KeyCode | None):
+        match key:
+            case keyboard.Key():
+                self.update_key(("keyboard", key.name))
+            case keyboard.KeyCode():
+                if key.char:
+                    self.update_key(("keyboard", key.char))
+        self.stop_rec()
+    
+    def on_ms_click(self, _x, _y, button: mouse.Button, pressed: bool):
+        if pressed:
+            self.update_key(("mouse", button.name))
+            self.stop_rec()
+
+    @classmethod
+    def getNewHotKey(cls, parent: QWidget | None, cur_key: HotkeyType) -> HotkeyType:
+        # return nothing since we register to global hotkey
+        dialog = cls(parent, cur_key)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.key
+        else:
+            return cur_key
+
+
+class SingleKeyHotkeyListener:
+    def __init__(self, input_key: HotkeyType, callback: Callable[[], None]):
+        self.input_key = input_key
+        self.callback = callback
+
+        self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press)
+        self.mouse_listener = mouse.Listener(on_click=self.on_mouse_click)
+
+        self.keyboard_listener.start()
+        self.mouse_listener.start()
+
+    def stop_listeners(self):
+        # should only be called when the main GUI stops
+        self.keyboard_listener.stop()
+        self.mouse_listener.stop()
+
+    def on_key_press(self, key: keyboard.Key | keyboard.KeyCode | None):
+        extracted_key: Optional[str] = None
+        match key:
+            case keyboard.Key():
+                extracted_key = key.name
+            case keyboard.KeyCode():
+                if key.char:
+                    extracted_key = key.char
+
+        if ("keyboard", extracted_key) == self.input_key:
+            self.callback()
+
+    def on_mouse_click(self, _x, _y, button: mouse.Button, pressed: bool):
+        if ("mouse", button.name) == self.input_key and pressed:
+            self.callback()
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -287,11 +403,11 @@ class MainWindow(QMainWindow):
         settingsMenu = menuBar.addMenu("Settings")
         assert settingsMenu is not None
         settingsMenu.addAction("Set TTS API URL", self.setTTSAPIWithDialog)
+        settingsMenu.addAction("Set Hotkey", self.setHotKeyWithDialog)
         self.setMenuBar(menuBar)
 
-        # Setup hotkeys. TODO make it more general
-        mouse_listener = mouse.Listener(on_click=self.on_click)
-        mouse_listener.start()
+        # Setup hotkeys
+        self.hotkey_listener = SingleKeyHotkeyListener(("mouse", "middle"), self.start_ocr_tts_pipeline)
 
         # Add two more lights to indicate OCR & TTS worker status for debugging
         self.ocr_light = LightWidget(self, QColor(255, 232, 189), QColor("black"))
@@ -308,7 +424,7 @@ class MainWindow(QMainWindow):
         self.ocr_worker.task_finished.connect(self.onOcrFinished)
         self.tts_worker = TaskWorker(self.tts_queue, self.tts_helper, self.tts_light)
         self.tts_worker.task_finished.connect(self.onTtsFinished)
-        self.player_worker = TaskWorker(self.player_queue, self.send_audio)
+        self.player_worker = TaskWorker(self.player_queue, self.play_audio)
         self.player_worker.task_finished.connect(self.onPlayerFinished)
 
         self.ocr_worker.start()
@@ -330,10 +446,6 @@ class MainWindow(QMainWindow):
         centralWidget.setLayout(vertical_layout)
         self.setCentralWidget(centralWidget)
 
-    def on_click(self, x, y, button, pressed):
-        if button == mouse.Button.middle and pressed:
-            self.start_ocr_tts_pipeline()
-
     def start_ocr_tts_pipeline(self):
         hwnd = int(self.capture_window.winId())
 
@@ -342,9 +454,6 @@ class MainWindow(QMainWindow):
         region_screenshot = take_region_screenshot(left, top, right, bottom)
 
         self.ocr_queue.put(region_screenshot)
-
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
 
     def toggleCaptureWindow(self, state: int):
         if state == 2:
@@ -355,6 +464,12 @@ class MainWindow(QMainWindow):
     def setTTSAPIWithDialog(self):
         new_url = TTSAPIInputDialog.getNewURL(self, self.tts_helper)
         self.tts_helper.tts_api = new_url
+
+    def setHotKeyWithDialog(self):
+        old_key = self.hotkey_listener.input_key
+        self.hotkey_listener.input_key = ("null", "")  # temporary disable
+        new_key = HotKeyInputDialog.getNewHotKey(self, old_key)
+        self.hotkey_listener.input_key = new_key
 
     @staticmethod
     def process_ocr(img: np.ndarray) -> Result[str, str]:
@@ -383,7 +498,7 @@ class MainWindow(QMainWindow):
                 item.setText(error_data)
 
     @staticmethod
-    def send_audio(task: Tuple[bytes, QListWidgetItem]) -> QListWidgetItem:
+    def play_audio(task: Tuple[bytes, QListWidgetItem]) -> QListWidgetItem:
         audio_data, item = task
         data, fs = sf.read(BytesIO(audio_data))
         sd.play(data, fs)
@@ -396,14 +511,14 @@ class MainWindow(QMainWindow):
     def closeEvent(self, _event) -> None:
         self.capture_window.close()
 
-    def addTextItem(self, text, status) -> QListWidgetItem:
+    def addTextItem(self, text: str, status: str) -> QListWidgetItem:
         # Create a new list item with the provided text
         item = QListWidgetItem(text)
         self.setTextItemColor(item, status)
         self.textListWidget.addItem(item)
         return item
 
-    def setTextItemColor(self, item, status):
+    def setTextItemColor(self, item: QListWidgetItem, status: str):
         # Change the color of the list item based on its status
         color_dict = {
             "ttsing": (QColor(255, 232, 189), QColor("black")),

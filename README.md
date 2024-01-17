@@ -13,6 +13,8 @@ In actual deployment, we used compiled Bert-VITS2 2.3 library with custom server
 
 <details>
 
+<summary>Custom server src</summary>
+
 ```python
 from loguru import logger
 
@@ -308,32 +310,38 @@ Please notice that we have heavily modified the original Bert-VITS2 2.3 codebase
 
 ### Change TTS server & API
 
-Due to the nature of countless formats of TTS APIs, you will have to modify source code in `main.py:process_tts`. Please notice that if you are not starting GUI from source code, you will have to recompile the exe file.
-
-### Prepare CUDA & CUDNN
-
-Please refer to [cuda](https://developer.nvidia.com/cuda-downloads) and [cudnn](https://developer.nvidia.com/cudnn) official website for installation.
-
-You may check if your CUDA is installed correctly by running `nvcc -V` in cmd.
+We now support entering your custom TTS server (but it would not be saved so far). After open the application, click the `Settings` button on the top right corner, and click on the `Set TTS API URL` option.
 
 ### Start GUI
 
-Fire up your TTS server first, or use online ones. Then double-click `main.exe` to start the GUI.
+Fire up your TTS server first, or use online ones. Then right-click on `start.ps1` -> `Run with Powershell` to start the GUI.
+
+<details>
+  <summary>Why we need script</summary>
+
+  cx_Freeze packs all .dlls into the `lib` folder. Technically, the user should not need to install any dependency. Yet we need to tell the program to search for dlls in it. Thus we provide a script to dynamically scan folders with .dlls in them, and fed it to the program.
+</details>
 
 If you are running from source code, run `python main.py` instead.
 
-#### Make sure it's using GPU!
+#### Make sure it's using GPU
 
-CPU inference is slow, especially for OCR. You may check if they are using GPU by looking at the console output of GUI. You should see something like this:
+CPU inference is slow, especially for OCR. You may check if they are using GPU by looking at the console output of GUI. However, please don't be confused by this output:
 
 ```powershell
 > .\build\exe.win-amd64-3.10\main.exe
 [2024/01/13 22:00:08] ppocr DEBUG: Namespace(help='==SUPPRESS==', use_gpu=True, ...
 ```
 
-Ensure that use_gpu is `True`. Otherwise you may need to double check CUDA & CUDNN installation.
+`use_gpu=True` would always be true. To actually check if the program is gonna work, you need to actually start an OCR request by pressing your hotkey.
 
 ## Compile into exe
+
+### Prepare CUDA & CUDNN
+
+Please refer to [cuda](https://developer.nvidia.com/cuda-downloads) and [cudnn](https://developer.nvidia.com/cudnn) official website for installation.
+
+You may check if your CUDA is installed correctly by running `nvcc -V` in cmd.
 
 ### Prepare venv
 
