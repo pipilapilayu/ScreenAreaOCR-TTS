@@ -5,8 +5,6 @@ import shutil
 
 sys.setrecursionlimit(sys.getrecursionlimit() * 50)
 
-target_dir = sys.argv[-1]
-
 # Path to the paddleocr package in your environment
 paddleocr_path = os.path.join(
     os.environ["VIRTUAL_ENV"], "Lib", "site-packages", "paddleocr"
@@ -27,9 +25,9 @@ build_exe_options = {
         "pynput.mouse._win32",
     ],
     "include_files": [
-        (paddleocr_path, "lib/paddleocr")
+        (paddleocr_path, "lib/paddleocr"),
+        "start.ps1"
     ],  # Use this to include additional files or directories if necessary
-    "build_exe": target_dir
 }
 
 # Define the base and executables
@@ -45,5 +43,3 @@ setup(
     options={"build_exe": build_exe_options},
     executables=executables,
 )
-
-shutil.copyfile("start.ps1", os.path.join(target_dir, "start.ps1"))
